@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/forecast.js": {
+      "runtime": "nodejs18.x"
+    }
+  }
+}
