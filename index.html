@@ -7,8 +7,6 @@
 
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;600&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
 body{
@@ -46,17 +44,6 @@ border-radius:15px;
 display:none;
 }
 
-.nota{
-font-size:28px;
-font-weight:bold;
-margin-top:15px;
-}
-
-#map{
-height:400px;
-margin:20px;
-border-radius:15px;
-}
 canvas{
 background:white;
 border-radius:15px;
@@ -73,118 +60,124 @@ margin:20px;
 </header>
 
 <select id="praia">
-<option value="vila|-28.2413,-48.6703">Praia da Vila</option>
-<option value="ribanceira|-28.2605,-48.6638">Ribanceira</option>
-<option value="itapiruba|-28.3241,-48.7033">Itapirubá</option>
-<option value="barra|-28.1920,-48.6485">Barra de Ibiraquera</option>
+<option value="-28.2413,-48.6703">Praia da Vila</option>
+<option value="-28.2605,-48.6638">Ribanceira</option>
+<option value="-28.3241,-48.7033">Itapirubá</option>
+<option value="-28.1920,-48.6485">Barra</option>
 </select>
 
 <br>
 <button onclick="buscarDados()">Atualizar</button>
 
 <div class="card" id="resultado">
-<p id="altura"></p>
-<p id="periodo"></p>
-<p id="vento"></p>
-<p id="direcao"></p>
-<div class="nota" id="nota"></div>
-<p id="mensagem"></p>
+<p id="resumo"></p>
+<p id="melhor"></p>
 </div>
 
-<canvas id="grafico"></canvas>
-<div id="map"></div>
+<h3>🌊 Ondas (24h)</h3>
+<canvas id="graficoOndas"></canvas>
+
+<h3>🌬 Vento (24h)</h3>
+<canvas id="graficoVento"></canvas>
 
 <script>
 
-let chart;
+let chartOndas;
+let chartVento;
 
-function calcularNota(pico, altura, periodo, dirOnda, vento, dirVento){
-let nota = 0;
-
-if(altura >= 1.0) nota += 2;
-if(altura >= 1.5) nota += 2;
-if(periodo >= 10) nota += 2;
-if(periodo >= 13) nota += 1;
-
-if(pico === "vila"){
-    if(dirOnda >= 150 && dirOnda <= 210) nota += 2;
-    if(dirVento >= 0 && dirVento <= 80) nota += 1;
+function direcaoParaSeta(g){
+if(g>=337||g<22) return "↑ N";
+if(g>=22&&g<67) return "↗ NE";
+if(g>=67&&g<112) return "→ L";
+if(g>=112&&g<157) return "↘ SE";
+if(g>=157&&g<202) return "↓ S";
+if(g>=202&&g<247) return "↙ SO";
+if(g>=247&&g<292) return "← O";
+return "↖ NO";
 }
 
-if(pico === "ribanceira"){
-    if(dirOnda >= 120 && dirOnda <= 190) nota += 2;
+function melhorHorario(data){
+let melhorIndex=0;
+let melhorScore=0;
+
+for(let i=0;i<24;i++){
+let score=0;
+if(data.hourly.wave_height[i]>=1.2) score+=3;
+if(data.hourly.wave_period[i]>=11) score+=3;
+if(data.hourly.windspeed_10m[i]<10) score+=3;
+
+if(score>melhorScore){
+melhorScore=score;
+melhorIndex=i;
+}
+}
+return melhorIndex;
 }
 
-if(pico === "itapiruba"){
-    if(dirOnda >= 160 && dirOnda <= 220) nota += 2;
-}
-
-if(pico === "barra"){
-    if(dirOnda >= 140 && dirOnda <= 200) nota += 2;
-    if(vento < 8) nota += 1;
-}
-
-return Math.min(nota,10);
+function corAltura(v){
+if(v<0.8) return "#4FC3F7";
+if(v<1.2) return "#29B6F6";
+if(v<1.8) return "#0288D1";
+if(v<2.5) return "#01579B";
+return "#002F6C";
 }
 
 async function buscarDados(){
 
-const selecionado = document.getElementById("praia").value;
-const [pico, coords] = selecionado.split("|");
-const [lat,lng] = coords.split(",");
+const praia=document.getElementById("praia").value;
+const [lat,lng]=praia.split(",");
 
-const url = `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lng}&hourly=wave_height,wave_period,wave_direction,windspeed_10m,winddirection_10m&daily=wave_height_max,wave_period_mean&timezone=auto`;
+const url=`https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lng}&hourly=wave_height,wave_period,wave_direction,windspeed_10m,winddirection_10m&timezone=auto`;
 
-const response = await fetch(url);
-const data = await response.json();
+const res=await fetch(url);
+const data=await res.json();
 
-const agora = new Date().toISOString().slice(0,13);
-const index = data.hourly.time.findIndex(t => t.startsWith(agora));
+// resumo atual
+const alturaAtual=data.hourly.wave_height[0];
+const periodoAtual=data.hourly.wave_period[0];
+const ventoAtual=data.hourly.windspeed_10m[0];
+const dirOndaAtual=data.hourly.wave_direction[0];
+const dirVentoAtual=data.hourly.winddirection_10m[0];
 
-const altura = data.hourly.wave_height[index];
-const periodo = data.hourly.wave_period[index];
-const dirOnda = data.hourly.wave_direction[index];
-const vento = data.hourly.windspeed_10m[index];
-const dirVento = data.hourly.winddirection_10m[index];
-
-const nota = calcularNota(pico, altura, periodo, dirOnda, vento, dirVento);
-
-let mensagem="";
-if(nota >= 8) mensagem="🔥 Clássico!";
-else if(nota >=5) mensagem="🌊 Surfável.";
-else mensagem="😕 Fraco ou mexido.";
+const melhor=melhorHorario(data);
+const horaMelhor=data.hourly.time[melhor].slice(11,16);
 
 document.getElementById("resultado").style.display="block";
-document.getElementById("altura").innerText=`Altura: ${altura.toFixed(2)} m`;
-document.getElementById("periodo").innerText=`Período: ${periodo.toFixed(1)} s`;
-document.getElementById("vento").innerText=`Vento: ${vento.toFixed(1)} km/h`;
-document.getElementById("direcao").innerText=`Direção Swell: ${dirOnda}°`;
-document.getElementById("nota").innerText=`Nota: ${nota}/10`;
-document.getElementById("mensagem").innerText=mensagem;
+document.getElementById("resumo").innerText=
+`Agora: ${alturaAtual.toFixed(1)}m ${direcaoParaSeta(dirOndaAtual)} | Período ${periodoAtual.toFixed(1)}s | Vento ${ventoAtual.toFixed(1)}km/h ${direcaoParaSeta(dirVentoAtual)}`;
 
-if(chart) chart.destroy();
+document.getElementById("melhor").innerText=`🔥 Melhor horário: ${horaMelhor}`;
 
-chart = new Chart(document.getElementById("grafico"), {
-type: 'line',
-data: {
-labels: data.daily.time,
-datasets: [{
-label: 'Altura Máxima (m)',
-data: data.daily.wave_height_max,
-tension: 0.3
+// gráfico ondas estilo Windy
+if(chartOndas) chartOndas.destroy();
+
+chartOndas=new Chart(document.getElementById("graficoOndas"),{
+type:'bar',
+data:{
+labels:data.hourly.time.slice(0,24).map(t=>t.slice(11,16)),
+datasets:[{
+label:'Altura (m)',
+data:data.hourly.wave_height.slice(0,24),
+backgroundColor:data.hourly.wave_height.slice(0,24).map(corAltura)
 }]
 }
 });
+
+// gráfico vento
+if(chartVento) chartVento.destroy();
+
+chartVento=new Chart(document.getElementById("graficoVento"),{
+type:'line',
+data:{
+labels:data.hourly.time.slice(0,24).map(t=>t.slice(11,16)),
+datasets:[{
+label:'Vento (km/h)',
+data:data.hourly.windspeed_10m.slice(0,24)
+}]
 }
+});
 
-const map = L.map('map').setView([-28.24, -48.67], 11);
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-L.marker([-28.2413,-48.6703]).addTo(map).bindPopup("Praia da Vila");
-L.marker([-28.2605,-48.6638]).addTo(map).bindPopup("Ribanceira");
-L.marker([-28.3241,-48.7033]).addTo(map).bindPopup("Itapirubá");
-L.marker([-28.1920,-48.6485]).addTo(map).bindPopup("Barra");
+}
 
 </script>
 
