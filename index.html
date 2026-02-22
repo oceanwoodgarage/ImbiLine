@@ -16,12 +16,10 @@ background:#0A1F44;
 color:white;
 text-align:center;
 }
-
 header{
 padding:20px;
 background:#081733;
 }
-
 select,button{
 margin-top:15px;
 padding:10px;
@@ -29,13 +27,11 @@ border-radius:8px;
 border:none;
 font-size:16px;
 }
-
 button{
 background:#00BFA5;
 color:white;
 cursor:pointer;
 }
-
 .card{
 background:#1565C0;
 margin:20px;
@@ -43,11 +39,14 @@ padding:20px;
 border-radius:15px;
 display:none;
 }
-
 canvas{
 background:white;
 border-radius:15px;
 margin:20px;
+}
+.erro{
+color:#FF5252;
+margin-top:20px;
 }
 </style>
 </head>
@@ -73,6 +72,8 @@ margin:20px;
 <p id="resumo"></p>
 <p id="melhor"></p>
 </div>
+
+<p class="erro" id="erro"></p>
 
 <h3>🌊 Ondas (24h)</h3>
 <canvas id="graficoOndas"></canvas>
@@ -102,9 +103,9 @@ let melhorScore=0;
 
 for(let i=0;i<24;i++){
 let score=0;
-if(data.hourly.wave_height[i]>=1.2) score+=3;
-if(data.hourly.wave_period[i]>=11) score+=3;
-if(data.hourly.windspeed_10m[i]<10) score+=3;
+if(data.wave_height[i]>=1.2) score+=3;
+if(data.wave_period[i]>=11) score+=3;
+if(data.windspeed_10m[i]<10) score+=3;
 
 if(score>melhorScore){
 melhorScore=score;
@@ -124,58 +125,77 @@ return "#002F6C";
 
 async function buscarDados(){
 
+document.getElementById("erro").innerText="";
+document.getElementById("resultado").style.display="none";
+
+try{
+
 const praia=document.getElementById("praia").value;
 const [lat,lng]=praia.split(",");
 
 const url=`https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lng}&hourly=wave_height,wave_period,wave_direction,windspeed_10m,winddirection_10m&timezone=auto`;
 
 const res=await fetch(url);
-const data=await res.json();
 
-// resumo atual
-const alturaAtual=data.hourly.wave_height[0];
-const periodoAtual=data.hourly.wave_period[0];
-const ventoAtual=data.hourly.windspeed_10m[0];
-const dirOndaAtual=data.hourly.wave_direction[0];
-const dirVentoAtual=data.hourly.winddirection_10m[0];
+if(!res.ok) throw new Error("Erro na API");
 
-const melhor=melhorHorario(data);
-const horaMelhor=data.hourly.time[melhor].slice(11,16);
+const json=await res.json();
+
+if(!json.hourly) throw new Error("Sem dados horários");
+
+const horas=json.hourly.time.slice(0,24);
+const wave=json.hourly.wave_height.slice(0,24);
+const period=json.hourly.wave_period.slice(0,24);
+const wind=json.hourly.windspeed_10m.slice(0,24);
+const waveDir=json.hourly.wave_direction.slice(0,24);
+const windDir=json.hourly.winddirection_10m.slice(0,24);
+
+if(wave.length===0) throw new Error("Dados vazios");
+
+const melhor=melhorHorario({
+wave_height:wave,
+wave_period:period,
+windspeed_10m:wind
+});
 
 document.getElementById("resultado").style.display="block";
 document.getElementById("resumo").innerText=
-`Agora: ${alturaAtual.toFixed(1)}m ${direcaoParaSeta(dirOndaAtual)} | Período ${periodoAtual.toFixed(1)}s | Vento ${ventoAtual.toFixed(1)}km/h ${direcaoParaSeta(dirVentoAtual)}`;
+`Agora: ${wave[0].toFixed(1)}m ${direcaoParaSeta(waveDir[0])} | Período ${period[0].toFixed(1)}s | Vento ${wind[0].toFixed(1)}km/h ${direcaoParaSeta(windDir[0])}`;
 
-document.getElementById("melhor").innerText=`🔥 Melhor horário: ${horaMelhor}`;
+document.getElementById("melhor").innerText=
+`🔥 Melhor horário: ${horas[melhor].slice(11,16)}`;
 
-// gráfico ondas estilo Windy
 if(chartOndas) chartOndas.destroy();
 
 chartOndas=new Chart(document.getElementById("graficoOndas"),{
 type:'bar',
 data:{
-labels:data.hourly.time.slice(0,24).map(t=>t.slice(11,16)),
+labels:horas.map(h=>h.slice(11,16)),
 datasets:[{
 label:'Altura (m)',
-data:data.hourly.wave_height.slice(0,24),
-backgroundColor:data.hourly.wave_height.slice(0,24).map(corAltura)
+data:wave,
+backgroundColor:wave.map(corAltura)
 }]
 }
 });
 
-// gráfico vento
 if(chartVento) chartVento.destroy();
 
 chartVento=new Chart(document.getElementById("graficoVento"),{
 type:'line',
 data:{
-labels:data.hourly.time.slice(0,24).map(t=>t.slice(11,16)),
+labels:horas.map(h=>h.slice(11,16)),
 datasets:[{
 label:'Vento (km/h)',
-data:data.hourly.windspeed_10m.slice(0,24)
+data:wind
 }]
 }
 });
+
+}catch(e){
+document.getElementById("erro").innerText="Erro ao carregar dados. Verifique conexão ou API.";
+console.error(e);
+}
 
 }
 
