@@ -133,7 +133,7 @@ try{
 const praia=document.getElementById("praia").value;
 const [lat,lng]=praia.split(",");
 
-const url=`https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lng}&hourly=wave_height,wave_period,wave_direction,wind_speed_10m,wind_direction_10m&timezone=auto`;
+const url = `/api/marine?lat=${lat}&lng=${lng}`;
 
 const res=await fetch(url);
 
